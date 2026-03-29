@@ -1,27 +1,28 @@
 //! Types of the properties of a [`Player`](super::Player)
 
+use std::any::Any;
 use std::fmt::Debug;
 use std::{collections::HashMap, time::Duration};
 
 use zbus::zvariant::OwnedValue;
 
-use crate::{Loop, Metadata as Mtd, Playback};
 use crate::player::enums::Interface;
-
+use crate::{Loop, Metadata as Mtd, Playback};
 
 /// Can be used to get some property from the bus.
-/// <br>Properties also may implement [WritableProperty], or [ControlWritableProperty] (but shouldn't implement both at the same time).
-pub trait Property : Debug {
+///
+/// Properties also may implement [WritableProperty], or [ControlWritableProperty] (but shouldn't implement both at the same time).
+pub trait Property: Debug {
     /// Parses form zbus's Value as this, with into_output transformations may be applied
     type ParseAs: serde::de::DeserializeOwned + Send + 'static + Clone;
 
-    /// The output type of the property 
-    type Output:  Send + 'static;
+    /// The output type of the property
+    type Output: Send + 'static;
 
     /// The name as specified by the [specs](https://specifications.freedesktop.org/mpris/latest/Media_Player.html)
     fn name(&self) -> &'static str;
 
-    /// The interface the property is on. 
+    /// The interface the property is on.
     fn interface(&self) -> Interface {
         Interface::default()
     }
@@ -31,24 +32,49 @@ pub trait Property : Debug {
 }
 
 /// Implementators of this are writable [properties](Property).
-/// <br> A [Property] should not implement both this and [ControlWritableProperty] at the same time!
-pub trait WritableProperty : Property {
+///
+/// A [Property] should not implement both this and [ControlWritableProperty] at the same time!
+pub trait WritableProperty: Property {
     /// The opposite of [Property::into_output], as it converts the [Property::Output] into [Property::ParseAs]
     fn from_output(&self, value: Self::Output) -> Self::ParseAs;
 }
 
-/// Implementors are [properties](Property) that can be modified, but only if [CanControl] is true. 
+/// Implementors are [properties](Property) that can be modified, but only if [CanControl] is true.
 /// A [Property] should not implement both this and [WritableProperty] at the same time!
 /// <br>According to the specs, this describes the player's implementation, rather than the current state, meaning this wont change after an object is registered.
-pub trait ControlWritableProperty : Property {
+pub trait ControlWritableProperty: Property {
     /// The opposite of [Property::into_output], as it converts the [Property::Output] into [Property::ParseAs]
     fn from_output(&self, value: Self::Output) -> Self::ParseAs;
 }
 
+pub struct AnyStreamYield {
+    pub value: Box<dyn Any + Send>,
+}
+
+/// An object (or dyn) safe version of [`Property`].
+pub trait AnyProperty {
+    fn name(&self) -> &'static str;
+    fn interface(&self) -> Interface;
+}
+impl<P> AnyProperty for P
+where
+    P: Property + Debug + Send + Sync + Unpin + 'static,
+{
+    fn interface(&self) -> Interface {
+        P::interface(&self)
+    }
+
+    fn name(&self) -> &'static str {
+        P::name(&self)
+    }
+}
+
+// ======= TYPES =======
+
 pub const CANQUIT: CanQuit = CanQuit;
-/// If false, calling Quit will have no effect. 
-/// <br>If true, calling Quit will cause the media application to <b>attempt</b> to quit 
-/// (although it may still be prevented from quitting by the user, for example). 
+/// If false, calling Quit will have no effect.
+/// <br>If true, calling Quit will cause the media application to <b>attempt</b> to quit
+/// (although it may still be prevented from quitting by the user, for example).
 #[derive(Debug)]
 pub struct CanQuit;
 impl Property for CanQuit {
@@ -86,10 +112,8 @@ impl Property for CanControl {
     }
 }
 
-
-
 pub const FULLSCREEN: Fullscreen = Fullscreen;
-/// Whether the media player is occupying the fullscreen. 
+/// Whether the media player is occupying the fullscreen.
 #[derive(Debug)]
 pub struct Fullscreen;
 impl Property for Fullscreen {
@@ -110,7 +134,6 @@ impl WritableProperty for Fullscreen {
     }
 }
 
-
 pub const CANSETFULLSCREEN: CanSetFullscreen = CanSetFullscreen;
 /// If false setting Fullscreen will have no effect
 #[derive(Debug)]
@@ -128,9 +151,8 @@ impl Property for CanSetFullscreen {
     }
 }
 
-
 pub const CANRAISE: CanRaise = CanRaise;
-/// If raise() will work. 
+/// If raise() will work.
 /// <br>Note: raising is the process of bringing the media player to front, for example maximizing it, or jumping to it in the visual environment.
 #[derive(Debug)]
 pub struct CanRaise;
@@ -146,7 +168,6 @@ impl Property for CanRaise {
         value
     }
 }
-
 
 pub const HASTRACKLIST: HasTrackList = HasTrackList;
 /// If the player has tracklist
@@ -165,7 +186,6 @@ impl Property for HasTrackList {
     }
 }
 
-
 pub const IDENTITY: Identity = Identity;
 /// The "display name" of the player. For example "Mozilla Firefox" or "VLC media player"
 #[derive(Debug)]
@@ -182,7 +202,6 @@ impl Property for Identity {
         value
     }
 }
-
 
 pub const DESKTOPENTRY: DesktopEntry = DesktopEntry;
 /// The desktop entry of the player. For example "firefox" or "vlc"
@@ -201,9 +220,8 @@ impl Property for DesktopEntry {
     }
 }
 
-
 pub const SUPPORTEDURIS: SupportedURIs = SupportedURIs;
-/// The URI schemes supported by the media player.This can be viewed as protocols supported by the player in almost all cases. 
+/// The URI schemes supported by the media player.This can be viewed as protocols supported by the player in almost all cases.
 #[derive(Debug)]
 pub struct SupportedURIs;
 impl Property for SupportedURIs {
@@ -218,8 +236,6 @@ impl Property for SupportedURIs {
         value
     }
 }
-
-
 
 pub const SUPPORTEDMIMES: SupportedMIMEs = SupportedMIMEs;
 /// The mime-types supported by the media player.
@@ -238,8 +254,6 @@ impl Property for SupportedMIMEs {
         value
     }
 }
-
-
 
 pub const PLAYBACKSTATUS: PlaybackStatus = PlaybackStatus;
 /// The current playback status, see [super::Playback] for more details
@@ -261,7 +275,6 @@ impl Property for PlaybackStatus {
         "PlaybackStatus"
     }
 }
-
 
 pub const LOOPSTATUS: LoopStatus = LoopStatus;
 /// The current loop / repeat status. See [super::Loop] for more details
@@ -289,14 +302,13 @@ impl ControlWritableProperty for LoopStatus {
     }
 }
 
-
 pub const RATE: Rate = Rate;
-/// The current playback rate. This allows clients to display (reasonably) accurate progress bars without having to regularly query the media player for the current position. 
-/// 
-/// <br>The value must fall in the range described by MinimumRate and MaximumRate, and must not be 0.0. 
-/// If playback is paused, the PlaybackStatus property should be used to indicate this. A value of 0.0 should not be set by the client. 
+/// The current playback rate. This allows clients to display (reasonably) accurate progress bars without having to regularly query the media player for the current position.
+///
+/// <br>The value must fall in the range described by MinimumRate and MaximumRate, and must not be 0.0.
+/// If playback is paused, the PlaybackStatus property should be used to indicate this. A value of 0.0 should not be set by the client.
 /// If it is, the media player should act as though Pause was called.
-/// 
+///
 /// <br>If the media player has no ability to play at speeds other than the normal playback rate, this must still be implemented, and must return 1.0.
 #[derive(Debug)]
 pub struct Rate;
@@ -322,7 +334,6 @@ impl ControlWritableProperty for Rate {
     }
 }
 
-
 pub const MINIMUMRATE: MinimumRate = MinimumRate;
 /// The minimum value which the Rate property can take. Clients should not attempt to set the Rate property below this value.
 /// <br>Note that even if this value is 0.0 or negative, clients should not attempt to set the Rate property to 0.0.
@@ -346,7 +357,6 @@ impl Property for MinimumRate {
     }
 }
 
-
 pub const MAXIMUMRATE: MaximumRate = MaximumRate;
 /// The maximum value which the Rate property can take. Clients should not attempt to set the Rate property above this value.
 /// <br>This value should always be 1.0 or greater, but some players might return [zbus::fdo::Error::NotSupported].
@@ -368,7 +378,6 @@ impl Property for MaximumRate {
         "MaximumRate"
     }
 }
-
 
 pub const POSITION: Position = Position;
 /// The current track position, between 0 and the 'mpris:length' metadata entry (see [Metadata]).
@@ -394,7 +403,7 @@ impl Property for Position {
 }
 
 pub const SHUFFLE: Shuffle = Shuffle;
-/// A value of false indicates that playback is progressing linearly through a playlist, while true means playback is progressing through a playlist in some other order. 
+/// A value of false indicates that playback is progressing linearly through a playlist, while true means playback is progressing through a playlist in some other order.
 #[derive(Debug)]
 pub struct Shuffle;
 impl Property for Shuffle {
@@ -418,7 +427,6 @@ impl ControlWritableProperty for Shuffle {
         value.into()
     }
 }
-
 
 pub const VOLUME: Volume = Volume;
 /// Should be between 0.0 and 1.0, while higher settings are possible as well (but not reccommended).
@@ -446,8 +454,6 @@ impl ControlWritableProperty for Volume {
     }
 }
 
-
-
 pub const METADATA: Metadata = Metadata;
 /// See [super::Metadata] for more details
 #[derive(Debug)]
@@ -469,9 +475,8 @@ impl Property for Metadata {
     }
 }
 
-
 pub const CANGONEXT: CanGoNext = CanGoNext;
-/// Whether it's possible to call [super::Player::next] method and expect the current track to change. 
+/// Whether it's possible to call [super::Player::next] method and expect the current track to change.
 /// <br>(Even when playback can generally be controlled, there may not always be a next track to move to)
 #[derive(Debug)]
 pub struct CanGoNext;
@@ -492,10 +497,9 @@ impl Property for CanGoNext {
     }
 }
 
-
 pub const CANGOPREVIOUS: CanGoPrevious = CanGoPrevious;
 /// Whether the client can call the Previous method on this interface and expect the current track to change.
-/// <br>Even when playback can generally be controlled, there may not always be a next previous to move to. 
+/// <br>Even when playback can generally be controlled, there may not always be a next previous to move to.
 #[derive(Debug)]
 pub struct CanGoPrevious;
 impl Property for CanGoPrevious {
@@ -515,9 +519,8 @@ impl Property for CanGoPrevious {
     }
 }
 
-
 pub const CANPLAY: CanPlay = CanPlay;
-/// Whether playback can be started using Play or PlayPause. 
+/// Whether playback can be started using Play or PlayPause.
 /// <br>Even when playback can generally be controlled, it may not be possible to enter a "playing" state, for example if there is no "current track".
 #[derive(Debug)]
 pub struct CanPlay;
@@ -538,10 +541,9 @@ impl Property for CanPlay {
     }
 }
 
-
 pub const CANPAUSE: CanPause = CanPause;
-/// Whether playback can be paused using Pause or PlayPause. 
-/// <br>Not all media is pausable: it may not be possible to pause some streamed media, for example. 
+/// Whether playback can be paused using Pause or PlayPause.
+/// <br>Not all media is pausable: it may not be possible to pause some streamed media, for example.
 #[derive(Debug)]
 pub struct CanPause;
 impl Property for CanPause {
@@ -561,10 +563,8 @@ impl Property for CanPause {
     }
 }
 
-
-
 pub const CANSEEK: CanSeek = CanSeek;
-/// Whether the client can control the playback position using Seek and SetPosition. This may be different for different tracks. 
+/// Whether the client can control the playback position using Seek and SetPosition. This may be different for different tracks.
 /// <br>If [CanControl] is false, this should be (considered) false too.
 /// <br>Not all media is seekable: it may not be possible to seek when playing some streamed media, for example.
 #[derive(Debug)]

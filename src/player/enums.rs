@@ -7,7 +7,7 @@ pub enum Interface {
     MediaPlayer2,
     Player,
     TrackList,
-    Playlists
+    Playlists,
 }
 impl ToString for Interface {
     fn to_string(&self) -> String {
@@ -16,7 +16,7 @@ impl ToString for Interface {
             MediaPlayer2 => String::from("org.mpris.MediaPlayer2"),
             Player => String::from("org.mpris.MediaPlayer2.Player"),
             TrackList => String::from("org.mpris.MediaPlayer2.TrackList"),
-            Playlists => String::from("org.mpris.MediaPlayer2.Playlists")
+            Playlists => String::from("org.mpris.MediaPlayer2.Playlists"),
         }
     }
 }
@@ -38,15 +38,16 @@ pub enum Playback {
     Playing,
     Paused,
     #[default]
-    Stopped
+    Stopped,
 }
-impl Playback{
+impl Playback {
     pub fn to_string(&self) -> String {
         match *self {
             Playback::Paused => "Paused",
             Playback::Playing => "Playing",
-            Playback::Stopped => "Stopped"
-        }.to_string()
+            Playback::Stopped => "Stopped",
+        }
+        .to_string()
     }
 }
 impl From<String> for Playback {
@@ -88,15 +89,16 @@ pub enum Loop {
     /// The current track will repeat forever
     Track,
     /// The whole playlist will be repeated
-    Playlist
+    Playlist,
 }
-impl Loop{
+impl Loop {
     pub fn to_string(&self) -> String {
         match *self {
             Loop::None => "None",
             Loop::Track => "Track",
-            Loop::Playlist => "Playlist"
-        }.to_string()
+            Loop::Playlist => "Playlist",
+        }
+        .to_string()
     }
 }
 impl From<String> for Loop {

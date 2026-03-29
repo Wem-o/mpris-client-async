@@ -45,9 +45,7 @@ impl Mpris<'_> {
     ///     }
     /// }
     /// ```
-    pub async fn player_stream(
-        &self,
-    ) -> Result<impl Stream<Item = PlayerEvent>, zbus::Error> {
+    pub async fn player_stream(&self) -> Result<impl Stream<Item = PlayerEvent>, zbus::Error> {
         // Subscribe first to not miss the first while awawiting for get_players
         let signal_stream = self.proxy.receive_name_owner_changed().await?;
 

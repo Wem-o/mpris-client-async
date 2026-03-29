@@ -8,18 +8,16 @@ use zbus::zvariant::OwnedValue;
 #[derive(Debug, Clone)]
 pub struct Metadata {
     // MPRIS specific things
-
-    /// A unique identity for this track within the context of an MPRIS object. 
+    /// A unique identity for this track within the context of an MPRIS object.
     /// <br>This is always provided, but not always accurate (for example browsers might provide bullshit).
     pub trackid: String,
     /// The length of the track
     pub length: Option<Duration>,
-    /// The URI of the location of the track. You should not assume this will exist when a new track is played. 
+    /// The URI of the location of the track. You should not assume this will exist when a new track is played.
     /// <br>Local files will start "file://", but it can be an online URL as well (for example Spotify's desktop player provides a URL).
     pub art_url: Option<String>,
 
     // XESAM fields
-
     /// The album name
     pub album: String,
     /// A list of artists
@@ -52,14 +50,13 @@ pub struct Metadata {
     pub genres: Vec<String>,
     /// The lyricists of the media
     pub lyricists: Vec<String>,
-    
-    
-    /// The time when the media was created. Should follow ISO 8601. 
+
+    /// The time when the media was created. Should follow ISO 8601.
     /// <br>xesam:contentCreated
     pub created: String,
-    /// The time when the was first played. Should follow ISO 8601. 
+    /// The time when the was first played. Should follow ISO 8601.
     pub first_used: String,
-    /// The time when the was last played. Should follow ISO 8601. 
+    /// The time when the was last played. Should follow ISO 8601.
     pub last_used: String,
     /// The number of times the track has been played
     pub use_count: i64,
@@ -69,35 +66,80 @@ impl Metadata {
         Self {
             trackid: match map.get("mpris:trackid") {
                 Some(id) => id.to_string(),
-                None => String::new()
+                None => String::new(),
             },
-            length: map.get("mpris:length").map_or(None, |value| value.downcast_ref::<i64>().ok().map(|d| Duration::from_micros(d as u64))),
-            art_url: map.get("mpris:artUrl").map_or(None, |value| Some(value.to_string())),
+            length: map.get("mpris:length").map_or(None, |value| {
+                value
+                    .downcast_ref::<i64>()
+                    .ok()
+                    .map(|d| Duration::from_micros(d as u64))
+            }),
+            art_url: map
+                .get("mpris:artUrl")
+                .map_or(None, |value| Some(value.to_string())),
 
-            album: map.get("xesam:album").map_or(String::new(), |value| value.to_string()),
-            album_artist: map.get("xesam:albumArtists").map_or(Vec::new(), |value| Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)),
-            artists: map.get("xesam:artist").map_or(Vec::new(), |value| Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)),
-            comments: map.get("xesam:comment").map_or(Vec::new(), |value| Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)),
-            lyricists: map.get("xesam:lyricist").map_or(Vec::new(), |value| Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)),
-            composers: map.get("xesam:composer").map_or(Vec::new(), |value| Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)),
-            genres: map.get("xesam:genre").map_or(Vec::new(), |value| Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)),
+            album: map
+                .get("xesam:album")
+                .map_or(String::new(), |value| value.to_string()),
+            album_artist: map.get("xesam:albumArtists").map_or(Vec::new(), |value| {
+                Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)
+            }),
+            artists: map.get("xesam:artist").map_or(Vec::new(), |value| {
+                Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)
+            }),
+            comments: map.get("xesam:comment").map_or(Vec::new(), |value| {
+                Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)
+            }),
+            lyricists: map.get("xesam:lyricist").map_or(Vec::new(), |value| {
+                Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)
+            }),
+            composers: map.get("xesam:composer").map_or(Vec::new(), |value| {
+                Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)
+            }),
+            genres: map.get("xesam:genre").map_or(Vec::new(), |value| {
+                Vec::<String>::try_from(value.clone()).map_or(Vec::new(), |v| v)
+            }),
 
-            lyrics: map.get("mpris:asText").map_or(String::new(), |value| value.to_string()),
-            url: map.get("mpris:url").map_or(String::new(), |value| value.to_string()),
-            title: map.get("mpris:title").map_or(String::new(), |value| value.to_string()),
+            lyrics: map
+                .get("mpris:asText")
+                .map_or(String::new(), |value| value.to_string()),
+            url: map
+                .get("mpris:url")
+                .map_or(String::new(), |value| value.to_string()),
+            title: map
+                .get("mpris:title")
+                .map_or(String::new(), |value| value.to_string()),
 
-            auto_rating: map.get("xesam:autoRating").map_or(0.0, |value| value.downcast_ref::<f64>().unwrap_or(0.0)),
-            user_rating: map.get("xesam:userRating").map_or(0.0, |value| value.downcast_ref::<f64>().unwrap_or(0.0)),
+            auto_rating: map
+                .get("xesam:autoRating")
+                .map_or(0.0, |value| value.downcast_ref::<f64>().unwrap_or(0.0)),
+            user_rating: map
+                .get("xesam:userRating")
+                .map_or(0.0, |value| value.downcast_ref::<f64>().unwrap_or(0.0)),
 
-            bpm: map.get("xesam:audioBPM").map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
+            bpm: map
+                .get("xesam:audioBPM")
+                .map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
 
-            disc_number: map.get("xesam:discNumber").map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
-            track_number: map.get("xesam:trackNumber").map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
-            use_count: map.get("xesam:useCount").map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
+            disc_number: map
+                .get("xesam:discNumber")
+                .map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
+            track_number: map
+                .get("xesam:trackNumber")
+                .map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
+            use_count: map
+                .get("xesam:useCount")
+                .map_or(0, |value| value.downcast_ref::<i64>().unwrap_or(0)),
 
-            created: map.get("mpris:contentCreated").map_or(String::new(), |value| value.to_string()),
-            first_used: map.get("mpris:firstUsed").map_or(String::new(), |value| value.to_string()),
-            last_used: map.get("mpris:lastUsed").map_or(String::new(), |value| value.to_string())
+            created: map
+                .get("mpris:contentCreated")
+                .map_or(String::new(), |value| value.to_string()),
+            first_used: map
+                .get("mpris:firstUsed")
+                .map_or(String::new(), |value| value.to_string()),
+            last_used: map
+                .get("mpris:lastUsed")
+                .map_or(String::new(), |value| value.to_string()),
         }
     }
 }
@@ -106,4 +148,3 @@ impl From<HashMap<String, OwnedValue>> for Metadata {
         Self::new_from_hashmap(value)
     }
 }
-
