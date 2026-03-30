@@ -42,7 +42,7 @@ impl<T> StreamYield<T> {
 ///
 /// Note: this doesn't take into account the length of the media, as it might not be provided, thus the returned position could be longer than the length of the media.
 #[pin_project]
-pub struct PositionStream<'a> {
+pub struct PositionStream {
     #[pin]
     playback_stream: ParsedPropertyStream<PlaybackStatus>,
 
@@ -50,7 +50,7 @@ pub struct PositionStream<'a> {
     rate_stream: ParsedPropertyStream<Rate>,
 
     #[pin]
-    seeked_stream: ParsedSignalStream<'a, Seeked>,
+    seeked_stream: ParsedSignalStream<Seeked>,
 
     #[pin]
     sleep: Sleep,
@@ -63,14 +63,14 @@ pub struct PositionStream<'a> {
 
     player_name: OwnedBusName,
 }
-impl<'a> PositionStream<'a> {
+impl PositionStream {
     pub fn new(
         player_name: OwnedBusName,
         playback_stream: ParsedPropertyStream<PlaybackStatus>,
         initial_playback: Playback,
         rate_stream: ParsedPropertyStream<Rate>,
         initial_rate: f64,
-        seeked_stream: ParsedSignalStream<'a, Seeked>,
+        seeked_stream: ParsedSignalStream<Seeked>,
         initial_position: Duration,
     ) -> Self {
         Self {
@@ -86,7 +86,7 @@ impl<'a> PositionStream<'a> {
         }
     }
 }
-impl<'a> Stream for PositionStream<'a> {
+impl Stream for PositionStream {
     type Item = StreamYield<Duration>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -314,23 +314,23 @@ where
 /// A [`SignalStream`](https://docs.rs/zbus/latest/zbus/proxy/struct.SignalStream.html), but the raw data is parsed into the corresponding [`Signal`](super::signals::Signal) type.
 ///
 /// <br>For properties check out [`ParsedPropertyStream`]
-pub struct ParsedSignalStream<'a, S>
+pub struct ParsedSignalStream<S>
 where
     S: Signal + 'static,
     S::ParseAs: DeserializeOwned + Send + 'static,
 {
     #[pin]
-    raw_stream: SignalStream<'a>,
+    raw_stream: SignalStream<'static>,
 
     s: S,
     player_name: OwnedBusName,
 }
-impl<'a, S> ParsedSignalStream<'a, S>
+impl<S> ParsedSignalStream<S>
 where
     S: Signal + 'static,
     S::ParseAs: DeserializeOwned + Send + 'static,
 {
-    pub fn new(signal: S, player_name: OwnedBusName, signal_stream: SignalStream<'a>) -> Self {
+    pub fn new(signal: S, player_name: OwnedBusName, signal_stream: SignalStream<'static>) -> Self {
         Self {
             raw_stream: signal_stream,
             s: signal,
@@ -338,7 +338,7 @@ where
         }
     }
 }
-impl<'a, S> Stream for ParsedSignalStream<'a, S>
+impl<S> Stream for ParsedSignalStream<S>
 where
     S: Signal + 'static,
     S::Output: Send + 'static,

@@ -7,6 +7,8 @@ use crate::Player;
 
 use super::Mpris;
 
+pub type PlayerStream = Box<dyn Stream<Item = PlayerEvent>>;
+
 // The contents of this file was vibecoded, as it seemed boring :)
 
 /// An MPRIS player has appeared on or disappeared from the session bus.
@@ -15,7 +17,8 @@ pub enum PlayerEvent {
     /// A new MPRIS player registered itself on the bus.
     Connected(Arc<Player>),
     /// An MPRIS player that was previously connected has left the bus.
-    /// <br>The `Arc<Player>` is the last handle that was kept for that player;
+    ///
+    /// The `Arc<Player>` is the last handle that was kept for that player;
     /// method calls on it will now fail, but its metadata (name, etc.) is
     /// still readable.
     Disconnected(Arc<Player>),
@@ -45,7 +48,7 @@ impl Mpris<'_> {
     ///     }
     /// }
     /// ```
-    pub async fn player_stream(&self) -> Result<impl Stream<Item = PlayerEvent>, zbus::Error> {
+    pub async fn player_stream(&self) -> Result<PlayerStream, zbus::Error> {
         // Subscribe first to not miss the first while awawiting for get_players
         let signal_stream = self.proxy.receive_name_owner_changed().await?;
 
@@ -124,6 +127,6 @@ impl Mpris<'_> {
             },
         );
 
-        Ok(s)
+        Ok(Box::new(s))
     }
 }

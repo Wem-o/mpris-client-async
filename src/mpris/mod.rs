@@ -8,7 +8,7 @@ use crate::Player;
 
 // A stream of players added and removed
 mod player_stream;
-pub use player_stream::PlayerEvent;
+pub use player_stream::{PlayerEvent, PlayerStream};
 
 pub mod event_loop;
 

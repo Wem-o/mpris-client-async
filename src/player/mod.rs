@@ -208,10 +208,10 @@ impl Player {
     }
 
     /// Subscribe to a D-Bus signal. Possible options: [`signals`]
-    pub async fn subscribe<'a, S>(
+    pub async fn subscribe<S>(
         self: Arc<Self>,
         signal: S,
-    ) -> Result<ParsedSignalStream<'a, S>, zbus::Error>
+    ) -> Result<ParsedSignalStream<S>, zbus::Error>
     where
         S: Signal + Unpin + 'static,
         S::ParseAs: TryFrom<OwnedValue>,
@@ -226,10 +226,9 @@ impl Player {
     /// It does this by listening to the [`Seeked`] [`signal`](Signal) and the [`PlaybackStatus`] and [`Rate`] [`properties`](Property), and those's changes
     /// to determine the position of the playback.
     ///
-    /// <br><br>This SHOULD be prefered over repetitively calling [`get`](Self::get), as this is much more lighter.
-    pub async fn subscribe_position<'a, 'b>(
-        self: Arc<Self>,
-    ) -> Result<PositionStream<'a>, zbus::Error> {
+    /// <br>This SHOULD be prefered over repetitively calling [`get`](Self::get), as this tracks the
+    /// duration internally, instead of parsing from the bus every time.
+    pub async fn subscribe_position(self: Arc<Self>) -> Result<PositionStream, zbus::Error> {
         Ok(PositionStream::new(
             self.dbus_name(),
             self.clone()
