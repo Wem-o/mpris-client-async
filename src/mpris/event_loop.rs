@@ -72,10 +72,7 @@ impl PlayerLoop {
                 .into_iter() // Consume them again
                 .for_each(|stream| property_streams.push(stream)); // Append them to the property stream
 
-                let mut lock = streams.lock().await;
-                property_streams
-                    .into_iter()
-                    .for_each(|stream| lock.push(stream));
+                streams.lock().await.extend(property_streams);
 
                 Ok::<(), zbus::Error>(()) // Needed so the async block returns a Result, and so we can use the ?
             })
