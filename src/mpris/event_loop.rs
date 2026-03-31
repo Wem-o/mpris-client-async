@@ -1,28 +1,77 @@
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{
+    ops::Deref,
+    pin::Pin,
+    sync::Arc,
+    task::{
+        Context,
+        Poll::{self, *},
+    },
+    time::Duration,
+};
 
 use async_std::sync::Mutex;
 
-use futures::{Stream, future::join_all, stream::SelectAll};
+use futures::{Stream, StreamExt, TryFutureExt, future::join_all, stream::SelectAll};
+
 use zbus::names::OwnedBusName;
 
 use crate::{
-    Mpris, Player,
+    Mpris, Player, PlayerEvent,
     mpris::player_stream::PlayerStream,
     properties::{AnyProperty, AnyStreamYield},
     streams::{PositionStream, StreamYield},
 };
 
-pub enum MprisEvent<P>
-where
-    P: Send + 'static,
-{
-    Added(Player),
-    Removed(OwnedBusName),
-    PropertyChaned(StreamYield<P>),
-    PositionChanged(StreamYield<Duration>),
+impl<'a> Mpris<'a> {
+    pub async fn new_event_loop(
+        &self,
+        properties: Vec<Box<dyn AnyProperty + Send + Sync>>,
+        track_position: bool,
+    ) -> Result<PlayerLoop, zbus::Error> {
+        Ok(PlayerLoop::new(
+            self.get_players().await?,
+            properties,
+            self.player_stream().await?,
+            track_position,
+        )
+        .await?)
+    }
 }
 
-impl<'a> Mpris<'a> {}
+#[derive(Debug)]
+pub enum MprisEvent {
+    Added(Arc<Player>),
+    Removed(OwnedBusName),
+    PropertyChaned(AnyStreamYield),
+    PositionChanged(StreamYield<Duration>),
+}
+impl From<PlayerEvent> for MprisEvent {
+    fn from(value: PlayerEvent) -> Self {
+        match value {
+            PlayerEvent::Connected(player) => Self::Added(player),
+            PlayerEvent::Disconnected(player) => Self::Removed(player.dbus_name()),
+        }
+    }
+}
+impl From<&PlayerEvent> for MprisEvent {
+    fn from(value: &PlayerEvent) -> Self {
+        match value {
+            PlayerEvent::Connected(player) => Self::Added(player.clone()),
+            PlayerEvent::Disconnected(player) => Self::Removed(player.dbus_name()),
+        }
+    }
+}
+impl From<&StreamYield<Duration>> for MprisEvent {
+    fn from(value: &StreamYield<Duration>) -> Self {
+        Self::PositionChanged(value.clone())
+    }
+}
+impl From<&AnyStreamYield> for MprisEvent {
+    fn from(value: &AnyStreamYield) -> Self {
+        // Self::PropertyChaned(value.deref().clone())
+        unimplemented!()
+    }
+}
 
 pub struct PlayerLoop {
     // A list of tracked properties
@@ -34,6 +83,30 @@ pub struct PlayerLoop {
     property_streams: SelectAll<Pin<Box<dyn Stream<Item = AnyStreamYield> + Send>>>,
     position_streams: SelectAll<Pin<Box<PositionStream>>>,
     player_stream: PlayerStream,
+
+    pending_get_position_streams: Option<
+        Pin<
+            Box<
+                dyn Future<Output = Result<SelectAll<Pin<Box<PositionStream>>>, zbus::Error>>
+                    + Send
+                    + 'static,
+            >,
+        >,
+    >,
+
+    pending_get_property_streams: Option<
+        Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            SelectAll<Pin<Box<dyn Stream<Item = AnyStreamYield> + Send>>>,
+                            zbus::Error,
+                        >,
+                    > + Send
+                    + 'static,
+            >,
+        >,
+    >,
 }
 impl PlayerLoop {
     async fn get_property_streams(
@@ -132,22 +205,136 @@ impl PlayerLoop {
             players,
             track_position,
             properties,
+
+            pending_get_position_streams: None,
+            pending_get_property_streams: None,
         })
     }
+
+    /// Hanldes a pending async task
+    ///
+    /// Returns Pending if the future is not yet ready,
+    /// Ready(None) if future returned with error,
+    /// Ready(Some()) if the value was set successfully
+    fn handle_pending<T, E>(
+        pender: &mut Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'static>>,
+        set_on_success: &mut T,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<()>> {
+        match pender.try_poll_unpin(cx) {
+            Pending => Pending,
+            Ready(Err(_e)) => Ready(None),
+            Ready(Ok(v)) => {
+                *set_on_success = v;
+                Ready(Some(()))
+            }
+        }
+    }
 }
-// impl<'a, P> Stream for PlayerLoop<'a, P> {
-//     type Item = MprisEvent;
+impl Stream for PlayerLoop {
+    type Item = MprisEvent;
 
-//     fn poll_next(
-//         self: std::pin::Pin<&mut Self>,
-//         cx: &mut std::task::Context<'_>,
-//     ) -> std::task::Poll<Option<Self::Item>> {
-//         use std::task::Poll::*;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // You should follow the numbers (startind with 1.1) to read this
 
-//         select! {
-//             property = self.property_streams => {}
-//         }
+        let this = self.get_mut();
 
-//         Pending
-//     }
-// }
+        // TODO: Yield the current state
+
+        // 1.2 Check the position_streams
+        if let Some(position_streams) = this.pending_get_position_streams.as_mut() {
+            match Self::handle_pending(position_streams, &mut this.position_streams, cx) {
+                Pending => return Pending,
+                Ready(None) => return Ready(None),
+                Ready(Some(())) => this.pending_get_position_streams = None,
+            }
+        }
+
+        // 1.2 Check the property_streams
+        if let Some(prop_streams) = this.pending_get_property_streams.as_mut() {
+            match Self::handle_pending(prop_streams, &mut this.property_streams, cx) {
+                Pending => return Pending,
+                Ready(None) => return Ready(None),
+                Ready(Some(())) => this.pending_get_property_streams = None,
+            }
+        }
+
+        // 1.1 Poll players
+        match &this.player_stream.poll_next_unpin(cx) {
+            Pending => {}
+            Ready(None) => return Ready(None),
+            Ready(Some(event)) => {
+                // Update list of players
+                match &event {
+                    PlayerEvent::Connected(player) => {
+                        this.players.push(player.clone());
+                    }
+                    PlayerEvent::Disconnected(player) => {
+                        this.players.retain(|other| *player != *other);
+                    }
+                };
+
+                // Update internal streams
+                // Update position stream, 1.2 when the future finishes
+                if this.track_position {
+                    let player_clone = this.players.clone();
+                    this.pending_get_position_streams = Some(Box::pin(async move {
+                        Self::get_position_streams(player_clone).await
+                    }));
+
+                    // Poll future, so even if its not ready
+                    // the stream will be run again when it is
+                    // by the context
+                    match Self::handle_pending(
+                        this.pending_get_position_streams.as_mut().unwrap(),
+                        &mut this.position_streams,
+                        cx,
+                    ) {
+                        Ready(None) => return Ready(None),
+                        Ready(Some(())) => this.pending_get_position_streams = None,
+                        _ => {}
+                    }
+                }
+
+                // Update property streams, 1.3 when future finishes
+                let player_clone = this.players.clone();
+                let prop_clone = this
+                    .properties
+                    .iter()
+                    .map(|this| this.clone_box())
+                    .collect();
+                this.pending_get_property_streams = Some(Box::pin(async move {
+                    Self::get_property_streams(player_clone, prop_clone).await
+                }));
+                // Poll future, so even if its not ready
+                // the stream will be run again when it is
+                // by the context
+                match Self::handle_pending(
+                    this.pending_get_property_streams.as_mut().unwrap(),
+                    &mut this.property_streams,
+                    cx,
+                ) {
+                    Ready(None) => return Ready(None),
+                    Ready(Some(())) => this.pending_get_property_streams = None,
+                    _ => {}
+                }
+
+                return Ready(Some(event.into()));
+            }
+        }
+
+        // 2 Poll current position
+        match &this.position_streams.poll_next_unpin(cx) {
+            Pending => Pending
+            Ready(None) => return Ready(None),
+            Ready(Some(event)) => return Ready(Some(event.into())),
+        }
+
+        // 3 Poll the tracked properties
+        // match &this.property_streams.poll_next_unpin(cx) {
+        //     Pending => Pending,
+        //     Ready(None) => Ready(None),
+        //     Ready(Some(prop)) => Ready(Some(prop.into())),
+        // }
+    }
+}

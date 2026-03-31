@@ -32,6 +32,10 @@ pub trait Property: Debug + Clone + Copy {
 
     /// Convert the parsed value into the final Output
     fn into_output(&self, value: Self::ParseAs) -> Self::Output;
+
+    fn into_any(&self) -> Box<Self> {
+        Box::new(self.clone())
+    }
 }
 
 /// Implementators of this are writable [properties](Property).
@@ -50,6 +54,7 @@ pub trait ControlWritableProperty: Property + Clone {
     fn from_output(&self, value: Self::Output) -> Self::ParseAs;
 }
 
+#[derive(Debug)]
 pub struct AnyStreamYield {
     pub value: Box<dyn Any + Send>,
 }

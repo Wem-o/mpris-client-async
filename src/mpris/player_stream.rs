@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use futures::stream::{self, Stream, StreamExt as _};
 use zbus::names::OwnedBusName;
@@ -7,7 +7,7 @@ use crate::Player;
 
 use super::Mpris;
 
-pub type PlayerStream = Box<dyn Stream<Item = PlayerEvent>>;
+pub type PlayerStream = Pin<Box<dyn Stream<Item = PlayerEvent>>>;
 
 // The contents of this file was vibecoded, as it seemed boring :)
 
@@ -127,6 +127,6 @@ impl Mpris<'_> {
             },
         );
 
-        Ok(Box::new(s))
+        Ok(Box::pin(s))
     }
 }

@@ -33,7 +33,7 @@ pub struct StreamYield<T> {
     pub value: T,
 }
 impl<T> StreamYield<T> {
-    pub fn new(player_name: OwnedBusName, value: T) -> Self {
+    pub(crate) fn new(player_name: OwnedBusName, value: T) -> Self {
         Self { player_name, value }
     }
 }
@@ -256,12 +256,7 @@ where
 {
     type Item = StreamYield<P::Output>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>>
-// where
-    //     P: Send,
-    //     P::ParseAs: TryFrom<OwnedValue> + Send,
-    //     P::Output: Send + 'static,
-    {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
         let mut this = self.project();
 

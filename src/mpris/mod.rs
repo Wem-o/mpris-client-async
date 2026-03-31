@@ -11,6 +11,7 @@ mod player_stream;
 pub use player_stream::{PlayerEvent, PlayerStream};
 
 pub mod event_loop;
+pub use event_loop::*;
 
 #[derive(Debug, Clone)]
 /// Provides a convenient way to connect to the dbus and retrieve the MPRIS players.

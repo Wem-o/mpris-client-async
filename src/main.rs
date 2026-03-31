@@ -1,7 +1,9 @@
 use std::{pin::Pin, time::Duration};
 
 use futures::{StreamExt, stream::select_all};
-use mpris_client_async::{Mpris, properties::*, signals::Seeked, streams::PositionStream};
+use mpris_client_async::{
+    Mpris, MprisEvent, properties::*, signals::Seeked, streams::PositionStream,
+};
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +18,24 @@ async fn main() {
     // not even need it always
     //
     // In this case you keep a list of the players that you update according to the loop
+
+    let mut event_loop = mpris
+        .new_event_loop(vec![], true) // PlaybackStatus.into_any(), Metadata.into_any()
+        .await
+        .expect("Failed to create event loop: {0}");
+    while let Some(event) = event_loop.next().await {
+        match event {
+            MprisEvent::Added(player) => println!("Player added with name: {}", player.dbus_name()),
+            MprisEvent::Removed(name) => println!("Player removed with name: {}", name),
+            MprisEvent::PositionChanged(value) => println!(
+                "Player with name \"{}\" is now at {}s",
+                value.player_name,
+                value.value.as_secs()
+            ),
+            _ => {} // MprisEvent::PropertyChaned(prop) => println!("Property {} for player {} changed to {}", prop.value.),
+        }
+    }
+    eprintln!("========");
 
     //= while let Some(event: Event) = mpris::get_event_loop(vec![PlaybackStatus, LoopStatus], track_position=true).await {
     //=     match event {
@@ -175,12 +195,20 @@ async fn main() {
     }
 
     // Listen and print if a new device connects or disconnects
-    // let player_stream = mpris.player_stream().await.expect("Failed to subscribe to player_stream");
-    // pin_mut!(player_stream);
+    // let mut player_stream = mpris
+    //     .player_stream()
+    //     .await
+    //     .expect("Failed to subscribe to player_stream");
     // while let Some(event) = player_stream.next().await {
     //     match event {
-    //         PlayerEvent::Connected(player) => println!("New player connected with name: {}", player.dbus_name().to_string()),
-    //         PlayerEvent::Disconnected(player) => println!("Player disconnected with name: {}", player.dbus_name().to_string())
+    //         PlayerEvent::Connected(player) => println!(
+    //             "New player connected with name: {}",
+    //             player.dbus_name().to_string()
+    //         ),
+    //         PlayerEvent::Disconnected(player) => println!(
+    //             "Player disconnected with name: {}",
+    //             player.dbus_name().to_string()
+    //         ),
     //     }
     // }
 }
