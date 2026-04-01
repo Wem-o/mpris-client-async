@@ -7,7 +7,7 @@ use zbus::zvariant::DynamicDeserialize;
 use crate::player::Interface;
 
 /// A dbus signal, check [`Player::subscribe`](super::Player::subscribe)
-pub trait Signal {
+pub trait Signal: Clone + Copy {
     /// Parses form zbus's Value as this, with into_output transformations may be applied
     type ParseAs: serde::de::DeserializeOwned + DynamicDeserialize<'static> + Send + 'static;
 
@@ -26,10 +26,11 @@ pub trait Signal {
     fn into_output(&self, value: Self::ParseAs) -> Self::Output;
 }
 
-pub const SEEKED: Seeked = Seeked;
 /// Indicates that the track position has changed in a way that is inconsistant with the current playing state. This could be seeking, pausing the player, or a track change.
-/// <br>To follow the current position of the player, you need to either poll the [`Position`](super::properties::Position) every X time, or subscribe to the
+///
+/// To follow the current position of the player, you need to either poll the [`Position`](super::properties::Position) every X time, or subscribe to the
 /// changes automatically handled by [`PositionStream`](super::PositionStream)
+#[derive(Debug, Clone, Copy)]
 pub struct Seeked;
 impl Signal for Seeked {
     type Output = Duration;

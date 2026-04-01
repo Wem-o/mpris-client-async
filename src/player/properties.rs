@@ -56,7 +56,7 @@ pub trait ControlWritableProperty: Property + Clone {
 
 #[derive(Debug)]
 pub struct AnyStreamYield {
-    pub value: Box<dyn Any + Send>,
+    pub value: Arc<dyn Any + Send>,
 }
 
 /// An object (or dyn) safe version of [`Property`].
@@ -75,7 +75,7 @@ pub trait AnyProperty: Debug {
         Box<
             dyn Future<
                     Output = Result<
-                        Pin<Box<dyn Stream<Item = AnyStreamYield> + Send + 'static>>,
+                        Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + Send + 'static>>,
                         zbus::Error,
                     >,
                 > + Send,
@@ -107,7 +107,7 @@ where
         Box<
             dyn Future<
                     Output = Result<
-                        Pin<Box<dyn Stream<Item = AnyStreamYield> + Send + 'static>>,
+                        Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + Send + 'static>>,
                         zbus::Error,
                     >,
                 > + Send,

@@ -1,12 +1,10 @@
 use std::{
-    ops::Deref,
     pin::Pin,
     sync::Arc,
     task::{
         Context,
         Poll::{self, *},
     },
-    time::Duration,
 };
 
 use async_std::sync::Mutex;
@@ -19,7 +17,7 @@ use crate::{
     Mpris, Player, PlayerEvent,
     mpris::player_stream::PlayerStream,
     properties::{AnyProperty, AnyStreamYield},
-    streams::{PositionStream, StreamYield},
+    streams::{PositionStream, PositionYield},
 };
 
 impl<'a> Mpris<'a> {
@@ -42,8 +40,8 @@ impl<'a> Mpris<'a> {
 pub enum MprisEvent {
     Added(Arc<Player>),
     Removed(OwnedBusName),
-    PropertyChaned(AnyStreamYield),
-    PositionChanged(StreamYield<Duration>),
+    PropertyChaned(Arc<AnyStreamYield>),
+    PositionChanged(PositionYield),
 }
 impl From<PlayerEvent> for MprisEvent {
     fn from(value: PlayerEvent) -> Self {
@@ -61,15 +59,14 @@ impl From<&PlayerEvent> for MprisEvent {
         }
     }
 }
-impl From<&StreamYield<Duration>> for MprisEvent {
-    fn from(value: &StreamYield<Duration>) -> Self {
+impl From<&PositionYield> for MprisEvent {
+    fn from(value: &PositionYield) -> Self {
         Self::PositionChanged(value.clone())
     }
 }
-impl From<&AnyStreamYield> for MprisEvent {
-    fn from(value: &AnyStreamYield) -> Self {
-        // Self::PropertyChaned(value.deref().clone())
-        unimplemented!()
+impl From<&Arc<AnyStreamYield>> for MprisEvent {
+    fn from(value: &Arc<AnyStreamYield>) -> Self {
+        Self::PropertyChaned(Arc::clone(value))
     }
 }
 
@@ -80,7 +77,7 @@ pub struct PlayerLoop {
 
     players: Vec<Arc<Player>>,
 
-    property_streams: SelectAll<Pin<Box<dyn Stream<Item = AnyStreamYield> + Send>>>,
+    property_streams: SelectAll<Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + Send>>>,
     position_streams: SelectAll<Pin<Box<PositionStream>>>,
     player_stream: PlayerStream,
 
@@ -99,7 +96,7 @@ pub struct PlayerLoop {
             Box<
                 dyn Future<
                         Output = Result<
-                            SelectAll<Pin<Box<dyn Stream<Item = AnyStreamYield> + Send>>>,
+                            SelectAll<Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + Send>>>,
                             zbus::Error,
                         >,
                     > + Send
@@ -112,7 +109,8 @@ impl PlayerLoop {
     async fn get_property_streams(
         players: Vec<Arc<Player>>,
         properties: Vec<Box<dyn AnyProperty + Send + Sync + 'static>>,
-    ) -> Result<SelectAll<Pin<Box<dyn Stream<Item = AnyStreamYield> + Send>>>, zbus::Error> {
+    ) -> Result<SelectAll<Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + Send>>>, zbus::Error>
+    {
         let streams = Arc::new(Mutex::new(SelectAll::new()));
 
         // To get the streams for all tracked propeties we need to
@@ -138,7 +136,7 @@ impl PlayerLoop {
                 .try_fold(Vec::new(), |mut filtered, maybe_stream| {
                     filtered.push(maybe_stream?);
                     Ok::<
-                        Vec<Pin<Box<dyn Stream<Item = AnyStreamYield> + std::marker::Send>>>,
+                        Vec<Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + std::marker::Send>>>,
                         zbus::Error,
                     >(filtered)
                 })? // Get the inner values from them, and if any is an Err abort the function
@@ -244,7 +242,7 @@ impl Stream for PlayerLoop {
         // 1.2 Check the position_streams
         if let Some(position_streams) = this.pending_get_position_streams.as_mut() {
             match Self::handle_pending(position_streams, &mut this.position_streams, cx) {
-                Pending => return Pending,
+                Pending => {}
                 Ready(None) => return Ready(None),
                 Ready(Some(())) => this.pending_get_position_streams = None,
             }
@@ -253,7 +251,7 @@ impl Stream for PlayerLoop {
         // 1.2 Check the property_streams
         if let Some(prop_streams) = this.pending_get_property_streams.as_mut() {
             match Self::handle_pending(prop_streams, &mut this.property_streams, cx) {
-                Pending => return Pending,
+                Pending => {}
                 Ready(None) => return Ready(None),
                 Ready(Some(())) => this.pending_get_property_streams = None,
             }
@@ -324,17 +322,19 @@ impl Stream for PlayerLoop {
         }
 
         // 2 Poll current position
-        match &this.position_streams.poll_next_unpin(cx) {
-            Pending => Pending
-            Ready(None) => return Ready(None),
-            Ready(Some(event)) => return Ready(Some(event.into())),
+        if this.track_position {
+            match &this.position_streams.poll_next_unpin(cx) {
+                Pending => {}
+                Ready(None) => return Ready(None),
+                Ready(Some(event)) => return Ready(Some(event.into())),
+            }
         }
 
         // 3 Poll the tracked properties
-        // match &this.property_streams.poll_next_unpin(cx) {
-        //     Pending => Pending,
-        //     Ready(None) => Ready(None),
-        //     Ready(Some(prop)) => Ready(Some(prop.into())),
-        // }
+        match &this.property_streams.poll_next_unpin(cx) {
+            Pending => Pending,
+            Ready(None) => return Ready(None),
+            Ready(Some(prop)) => Ready(Some(prop.into())),
+        }
     }
 }

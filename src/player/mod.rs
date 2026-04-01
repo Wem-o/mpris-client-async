@@ -192,7 +192,7 @@ impl Player {
     pub async fn subscribe_property_change_erased<P>(
         self: Arc<Self>,
         property: P,
-    ) -> Result<Pin<Box<dyn Stream<Item = AnyStreamYield> + Send>>, zbus::Error>
+    ) -> Result<Pin<Box<dyn Stream<Item = Arc<AnyStreamYield>> + Send>>, zbus::Error>
     where
         P: Property + Unpin + Send + Sync + 'static,
         P::ParseAs: TryFrom<OwnedValue> + Send,
@@ -201,8 +201,10 @@ impl Player {
         Ok(Box::pin(
             self.subscribe_property_change(property)
                 .await?
-                .map(|output| AnyStreamYield {
-                    value: Box::new(output),
+                .map(|output| {
+                    Arc::new(AnyStreamYield {
+                        value: Arc::new(output),
+                    })
                 }),
         ))
     }

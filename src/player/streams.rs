@@ -1,6 +1,8 @@
 //! Provides a few useful streams to make working with a [`Player`](super::Player) easier
 
 use std::{
+    fmt::Debug,
+    marker::PhantomData,
     ops::Deref,
     pin::Pin,
     task::{Context, Poll},
@@ -25,16 +27,59 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-/// Contains the value yielded by a stream, and the [`Player`](super::Player)'s name that yielded it.
-///
-/// Useful when combining streams
-pub struct StreamYield<T> {
+/// A duration object yielded by [`PositionStream`].
+pub struct PositionYield {
     pub player_name: OwnedBusName,
-    pub value: T,
+    pub value: Duration,
 }
-impl<T> StreamYield<T> {
-    pub(crate) fn new(player_name: OwnedBusName, value: T) -> Self {
-        Self { player_name, value }
+
+#[derive(Debug, Clone)]
+/// A property yielded by [`ParsedPropertyStream`].
+pub struct PropertyYield<T>
+where
+    T: Property + Send,
+    T::Output: Send + 'static,
+{
+    _phantom: PhantomData<T>,
+    pub player_name: OwnedBusName,
+    pub value: T::Output,
+}
+impl<T> PropertyYield<T>
+where
+    T: Property + Send + Debug + Clone + Copy,
+    T::Output: Send + 'static,
+{
+    pub(crate) fn new(player_name: OwnedBusName, value: T::Output) -> Self {
+        Self {
+            player_name,
+            value,
+            _phantom: PhantomData::<T>,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+/// A singal piece yielded by the mighty [`ParsedSignalStream`].
+pub struct SignalYield<T>
+where
+    T: Signal + Clone + 'static,
+    T::Output: Send + 'static,
+{
+    _phantom: PhantomData<T>,
+    pub player_name: OwnedBusName,
+    pub value: T::Output,
+}
+impl<T> SignalYield<T>
+where
+    T: Signal + Clone + Copy,
+    T::Output: Send + 'static,
+{
+    pub(crate) fn new(player_name: OwnedBusName, value: T::Output) -> Self {
+        Self {
+            player_name,
+            value,
+            _phantom: PhantomData::<T>,
+        }
     }
 }
 
@@ -87,7 +132,7 @@ impl PositionStream {
     }
 }
 impl Stream for PositionStream {
-    type Item = StreamYield<Duration>;
+    type Item = PositionYield;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -116,10 +161,10 @@ impl Stream for PositionStream {
                     *this.last_tick = Instant::now();
                     *this.position = new_position;
 
-                    return Ready(Some(StreamYield::new(
-                        this.player_name.clone(),
-                        new_position,
-                    )));
+                    return Ready(Some(PositionYield {
+                        player_name: this.player_name.clone(),
+                        value: new_position,
+                    }));
                 }
             }
         }
@@ -140,10 +185,10 @@ impl Stream for PositionStream {
                 match (old_playback, *this.playback) {
                     (Playback::Paused | Playback::Stopped, Playback::Playing) => {
                         *this.last_tick = Instant::now();
-                        return Ready(Some(StreamYield::new(
-                            this.player_name.clone(),
-                            *this.position,
-                        )));
+                        return Ready(Some(PositionYield {
+                            player_name: this.player_name.clone(),
+                            value: *this.position,
+                        }));
                     }
                     (Playback::Playing, Playback::Paused | Playback::Stopped) => {
                         let delta = Instant::now() - *this.last_tick;
@@ -152,10 +197,10 @@ impl Stream for PositionStream {
                         );
                         *this.last_tick = Instant::now();
 
-                        return Ready(Some(StreamYield::new(
-                            this.player_name.clone(),
-                            *this.position,
-                        )));
+                        return Ready(Some(PositionYield {
+                            player_name: this.player_name.clone(),
+                            value: *this.position,
+                        }));
                     }
                     _ => {}
                 }
@@ -173,7 +218,10 @@ impl Stream for PositionStream {
                 this.sleep
                     .set(sleep_until(Instant::now() + Duration::from_secs(1)));
 
-                return Ready(Some(StreamYield::new(this.player_name.clone(), new.value)));
+                return Ready(Some(PositionYield {
+                    player_name: this.player_name.clone(),
+                    value: new.value, // SLOP
+                }));
             }
         }
 
@@ -200,10 +248,10 @@ impl Stream for PositionStream {
                 this.sleep
                     .set(sleep_until(Instant::now() + Duration::from_secs(1)));
 
-                Ready(Some(StreamYield::new(
-                    this.player_name.clone(),
-                    *this.position,
-                )))
+                return Ready(Some(PositionYield {
+                    player_name: this.player_name.clone(),
+                    value: *this.position,
+                }));
             }
         }
     }
@@ -254,7 +302,7 @@ where
     P::ParseAs: TryFrom<OwnedValue> + Send,
     P::Output: Send + 'static,
 {
-    type Item = StreamYield<P::Output>;
+    type Item = PropertyYield<P>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -268,7 +316,7 @@ where
                         let parsed: P::Output = this.p.into_output(result);
                         this.pending.set(None);
 
-                        return Ready(Some(StreamYield::new(this.player_name.clone(), parsed)));
+                        return Ready(Some(PropertyYield::new(this.player_name.clone(), parsed)));
                     }
                     Ready(Err(_e)) => {
                         this.pending.set(None);
@@ -339,7 +387,7 @@ where
     S::Output: Send + 'static,
     S::ParseAs: DeserializeOwned + Send + 'static + Type,
 {
-    type Item = StreamYield<S::Output>;
+    type Item = SignalYield<S>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -357,7 +405,7 @@ where
                     Err(_e) => return Ready(None),
                 };
 
-                Ready(Some(StreamYield::new(
+                Ready(Some(SignalYield::new(
                     this.player_name.clone(),
                     this.s.into_output(parsed),
                 )))

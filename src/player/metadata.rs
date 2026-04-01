@@ -107,7 +107,7 @@ impl Metadata {
                 .get("mpris:url")
                 .map_or(String::new(), |value| value.to_string()),
             title: map
-                .get("mpris:title")
+                .get("xesam:title")
                 .map_or(String::new(), |value| value.to_string()),
 
             auto_rating: map
