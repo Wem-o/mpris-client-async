@@ -1,7 +1,6 @@
 use futures::StreamExt;
 use mpris_client_async::{Mpris, MprisEvent, properties::*, streams::PropertyYield};
 
-// TODO: Metadata: remove the " from the title / artists
 // TODO: Add signal parsing to the event loop as well
 // TODO: Implement other 2 interfaces
 
@@ -35,12 +34,14 @@ async fn main() {
 
                 if let Some(meta) = prop.value.downcast_ref::<PropertyYield<Metadata>>() {
                     println!(
-                        "Player {} now playing track with title: {} from album {}, from artist {}",
+                        "Player \"{}\" now playing track with title: \"{}\" from album \"{}\", from artist \"{}\". Track id is: \"{:?}\"",
                         meta.player_name,
                         meta.value.title,
                         meta.value.album,
-                        meta.value.artists.get(0).unwrap_or(&"??".to_string())
+                        meta.value.artists.get(0).unwrap_or(&"??".to_string()),
+                        meta.value.trackid
                     );
+                    // dbg!(meta);
                 } else if let Some(playback) =
                     prop.value.downcast_ref::<PropertyYield<PlaybackStatus>>()
                 {
