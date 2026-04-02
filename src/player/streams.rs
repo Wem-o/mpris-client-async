@@ -20,9 +20,8 @@ use zbus::{
 };
 
 use crate::{
-    Playback,
-    player::Property,
-    properties::{PlaybackStatus, Rate},
+    player::Playback,
+    properties::{PlaybackStatus, Property, Rate},
     signals::{Seeked, Signal},
 };
 
@@ -83,9 +82,15 @@ where
     }
 }
 
-/// Returns the current position of the media of a [`Player`](super::Player) every second, without polling the player.
+/// Returns the current position of the media of a [`Player`](super::Player) every second,
+/// without polling the player through the bus.
 ///
-/// Note: this doesn't take into account the length of the media, as it might not be provided, thus the returned position could be longer than the length of the media.
+/// It does this by listening to the [`Seeked`] [`signal`](super::signals::Signal) and the [`PlaybackStatus`] and
+/// [`Rate`] [`properties`](super::properties::Property), and those's changes
+/// to determine the position of the playback.
+///
+/// Note: this doesn't take into account the length of the media, as it might not be provided,
+/// thus the returned position could be longer than that of the media.
 #[pin_project]
 pub struct PositionStream {
     #[pin]

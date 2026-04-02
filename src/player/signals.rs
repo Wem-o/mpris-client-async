@@ -1,13 +1,13 @@
 //! Types of the signals of a [`Player`](super::Player)
 
-use std::time::Duration;
+use std::{fmt::Debug, hash::Hash};
 
 use zbus::zvariant::DynamicDeserialize;
 
 use crate::player::Interface;
 
 /// A dbus signal, check [`Player::subscribe`](super::Player::subscribe)
-pub trait Signal: Clone + Copy {
+pub trait Signal: Debug + Clone + Copy + Hash + PartialEq {
     /// Parses form zbus's Value as this, with into_output transformations may be applied
     type ParseAs: serde::de::DeserializeOwned + DynamicDeserialize<'static> + Send + 'static;
 
@@ -26,25 +26,32 @@ pub trait Signal: Clone + Copy {
     fn into_output(&self, value: Self::ParseAs) -> Self::Output;
 }
 
-/// Indicates that the track position has changed in a way that is inconsistant with the current playing state. This could be seeking, pausing the player, or a track change.
-///
-/// To follow the current position of the player, you need to either poll the [`Position`](super::properties::Position) every X time, or subscribe to the
-/// changes automatically handled by [`PositionStream`](super::PositionStream)
-#[derive(Debug, Clone, Copy)]
-pub struct Seeked;
-impl Signal for Seeked {
-    type Output = Duration;
-    type ParseAs = i64;
+pub mod types {
+    use std::time::Duration;
 
-    fn name(&self) -> &'static str {
-        "Seeked"
-    }
+    use crate::{player::Interface, signals::Signal};
 
-    fn interface(&self) -> Interface {
-        Interface::Player
-    }
+    /// Indicates that the track position has changed in a way that is inconsistant with the current playing state.
+    /// This could be seeking, pausing the player, or a track change.
+    ///
+    /// It's recommended to use [`PositionStream`](super::super::streams::PositionStream)
+    /// that will keep track of this stream, and other factors (like pause / speed).
+    #[derive(Debug, Clone, Copy, PartialEq, Hash)]
+    pub struct Seeked;
+    impl Signal for Seeked {
+        type Output = Duration;
+        type ParseAs = i64;
 
-    fn into_output(&self, value: Self::ParseAs) -> Self::Output {
-        Duration::from_micros(value as u64)
+        fn name(&self) -> &'static str {
+            "Seeked"
+        }
+
+        fn interface(&self) -> Interface {
+            Interface::Player
+        }
+
+        fn into_output(&self, value: Self::ParseAs) -> Self::Output {
+            Duration::from_micros(value as u64)
+        }
     }
 }

@@ -7,13 +7,14 @@ use crate::Player;
 
 use super::Mpris;
 
-pub type PlayerStream = Pin<Box<dyn Stream<Item = PlayerEvent>>>;
+/// Tracks the changes in available players on the bus
+pub type PlayerStream = Pin<Box<dyn Stream<Item = BusEvent>>>;
 
 // The contents of this file was vibecoded, as it seemed boring :)
 
 /// An MPRIS player has appeared on or disappeared from the session bus.
 #[derive(Debug, Clone)]
-pub enum PlayerEvent {
+pub enum BusEvent {
     /// A new MPRIS player registered itself on the bus.
     Connected(Arc<Player>),
     /// An MPRIS player that was previously connected has left the bus.
@@ -25,7 +26,7 @@ pub enum PlayerEvent {
 }
 
 impl Mpris<'_> {
-    /// Returns a [`Stream`] that yields a [`PlayerEvent`] every time an MPRIS
+    /// Returns a [`Stream`] that yields a [`BusEvent`] every time an MPRIS
     /// player connects to or disconnects from the session bus.
     ///
     /// The stream first snapshots every player that is **already** online (so
@@ -43,8 +44,8 @@ impl Mpris<'_> {
     ///
     /// while let Some(event) = events.next().await {
     ///     match event {
-    ///         PlayerEvent::Connected(player)    => println!("+ {}", player.name()),
-    ///         PlayerEvent::Disconnected(player) => println!("- {}", player.name()),
+    ///         BusEvent::Connected(player)    => println!("+ {}", player.name()),
+    ///         BusEvent::Disconnected(player) => println!("- {}", player.name()),
     ///     }
     /// }
     /// ```
@@ -97,7 +98,7 @@ impl Mpris<'_> {
                                     let player = Arc::new(player);
                                     known.insert(bus_name, player.clone());
                                     let state = (signal_stream, known, connection);
-                                    return Some((PlayerEvent::Connected(player), state));
+                                    return Some((BusEvent::Connected(player), state));
                                 }
                                 Err(_) => continue,
                             }
@@ -114,7 +115,7 @@ impl Mpris<'_> {
                             // can still read its metadata.
                             if let Some(player) = known.remove(&bus_name) {
                                 let state = (signal_stream, known, connection);
-                                return Some((PlayerEvent::Disconnected(player), state));
+                                return Some((BusEvent::Disconnected(player), state));
                             }
                             // Unknown player left (wasn't in our snapshot) — skip.
                             continue;

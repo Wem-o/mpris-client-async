@@ -2,6 +2,14 @@
 name = "mpris-client-async"
 version = "0.1.0"
 edition = "2024"
+description = "A truly type safe, async, MPRIS client."
+homepage = "https://codeberg.org/Wem-o/mpris-client-async"
+repository = "https://codeberg.org/Wem-o/mpris-client-async"
+# documentation = "https://docs.rs/"
+categories = ["api-bindings", "multimedia", "os::unix-apis", "asynchronous"]
+keywords = ["mpris", "dbus", "client", "async"]
+readme = "README.md"
+license = "MIT"
 
 [[bin]]
 name = "example"

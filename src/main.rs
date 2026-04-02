@@ -1,8 +1,12 @@
-use futures::StreamExt;
-use mpris_client_async::{Mpris, MprisEvent, properties::*, streams::PropertyYield};
-
 // TODO: Add signal parsing to the event loop as well
 // TODO: Implement other 2 interfaces
+
+use async_std::stream::StreamExt;
+use mpris_client_async::{
+    Mpris,
+    properties::{Metadata, PlaybackStatus, Property},
+    streams::{mpris::MprisEvent, player::PropertyYield},
+};
 
 #[tokio::main]
 async fn main() {

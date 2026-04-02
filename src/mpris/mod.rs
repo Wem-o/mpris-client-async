@@ -6,15 +6,17 @@ use zbus::{Connection, fdo::DBusProxy};
 
 use crate::Player;
 
-// A stream of players added and removed
 mod player_stream;
-pub use player_stream::{PlayerEvent, PlayerStream};
+pub use player_stream::{BusEvent, PlayerStream};
 
 pub mod event_loop;
 pub use event_loop::*;
 
 #[derive(Debug, Clone)]
 /// Provides a convenient way to connect to the dbus and retrieve the MPRIS players.
+///
+/// The connection is ARC counted, so as long as some player object,
+/// or the connection isn't dropped, MPRIS events will be received.
 pub struct Mpris<'a> {
     connection: Connection,
     pub(crate) proxy: DBusProxy<'a>,

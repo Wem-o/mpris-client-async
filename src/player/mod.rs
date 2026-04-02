@@ -12,12 +12,14 @@ use zbus::{
 mod metadata;
 pub use metadata::Metadata;
 
-pub use crate::player::properties::{ControlWritableProperty, Property, WritableProperty};
 use crate::{
-    player::{signals::Signal, streams::ParsedPropertyStream},
-    properties::{AnyStreamYield, PlaybackStatus, Position, Rate},
+    player::{
+        properties::{ControlWritableProperty, Property, WritableProperty},
+        signals::Signal,
+        streams::{ParsedPropertyStream, ParsedSignalStream, PositionStream},
+    },
+    properties::{PlaybackStatus, Position, Rate, erased_types::AnyStreamYield},
     signals::Seeked,
-    streams::{ParsedSignalStream, PositionStream},
 };
 
 pub mod properties;
@@ -28,7 +30,7 @@ pub use enums::*;
 
 pub mod streams;
 
-/// A player that plays something, or not, who knowns...
+/// Represents an MPRIS player endpoint.
 #[derive(Debug, Clone)]
 pub struct Player {
     /// Well known name
@@ -96,7 +98,7 @@ impl Player {
 
     /// Returns the ["unique name"](https://z-galaxy.github.io/zbus/concepts.html#bus-name--service-name) of the player.
     ///
-    /// For example `org.mpris.MediaPlayer2.vlc`.
+    /// For example `org.mpris.MediaPlayer2.vlc`
     pub fn dbus_name(&self) -> OwnedBusName {
         self.name.clone()
     }
@@ -116,7 +118,7 @@ impl Player {
         }
     }
 
-    /// Parses a property from the player. See [`properties`] for more
+    /// Parses a property from the player. See [`crate::properties`] for more
     pub async fn get<P>(&self, property: P) -> Result<P::Output, zbus::Error>
     where
         P: Property,
@@ -136,11 +138,11 @@ impl Player {
 
     /// Set a property that implements [`WritableProperty`].
     ///
-    /// Note: only properties that doesnt require [`properties::CanControl`] to be true
+    /// Note: only properties that doesnt require [`properties::types::CanControl`] to be true
     /// can be set here. For properties that do require it see [`set_controlled`](Self::set_controlled).
     pub async fn set<'a, P>(&self, property: P, new_value: P::Output) -> Result<(), fdo::Error>
     where
-        P: WritableProperty,
+        P: WritableProperty + Property,
         P::ParseAs: 'a + Into<Value<'a>>,
     {
         let proxy = self.iface_to_proxy(property.interface())?;
@@ -152,7 +154,7 @@ impl Player {
             .map(|_| ())
     }
 
-    /// Sets a property that requires the player to allow controlling, thus [`properties::CanControl`] must be true.
+    /// Sets a property that requires the player to allow controlling, thus [`properties::types::CanControl`] must be true.
     ///
     /// Make sure to check it before using it. If not checked before use it will return with an error
     // TODO: Find the type of error a player without cancontrol can return if trying to be set.
@@ -162,7 +164,7 @@ impl Player {
         new_value: P::Output,
     ) -> Result<(), fdo::Error>
     where
-        P: ControlWritableProperty,
+        P: ControlWritableProperty + Property + Property,
         P::ParseAs: 'a + Into<Value<'a>>,
     {
         let proxy = self.iface_to_proxy(property.interface())?;
@@ -209,7 +211,7 @@ impl Player {
         ))
     }
 
-    /// Subscribe to a D-Bus signal. Possible options: [`signals`]
+    /// Subscribe to a D-Bus signal. Possible options: [`signals`](crate::signals)
     pub async fn subscribe<S>(
         self: Arc<Self>,
         signal: S,
@@ -225,11 +227,12 @@ impl Player {
     }
 
     /// Returns a [`PositionStream`] that yields the current (esitmated) position of the media playback.
+    ///
     /// It does this by listening to the [`Seeked`] [`signal`](Signal) and the [`PlaybackStatus`] and [`Rate`] [`properties`](Property), and those's changes
     /// to determine the position of the playback.
     ///
-    /// <br>This SHOULD be prefered over repetitively calling [`get`](Self::get), as this tracks the
-    /// duration internally, instead of parsing from the bus every time.
+    /// This SHOULD be prefered over repetitively calling [`get(Position)`](Self::get), as this tracks the
+    /// duration internally, instead of parsing from the bus every time, which takes more time.
     pub async fn subscribe_position(self: Arc<Self>) -> Result<PositionStream, zbus::Error> {
         Ok(PositionStream::new(
             self.dbus_name(),
@@ -270,45 +273,53 @@ impl Player {
     }
 
     /// Skips to the next track in the tracklist. If there is no next track (and endless playback and track repeat are both off), stop playback.
-    /// <br>If playback is paused or stopped, it remains that way.
-    /// <br>If [`properties::CanGoNext`] is false, attempting to call this method should have no effect.
+    ///
+    /// If playback is paused or stopped, it remains that way.
+    ///
+    /// If [`properties::types::CanGoNext`] is false, attempting to call this method should have no effect.
     pub async fn next(&self) -> Result<(), zbus::Error> {
         self.call_method("Next", [()], Interface::Player).await
     }
 
     /// Skips to the previous track in the tracklist. If there is no previous track (and endless playback and track repeat are both off), stop playback.
-    /// <br>If playback is paused or stopped, it remains that way.
-    /// <br>If [`properties::CanGoPrevious`] is false, attempting to call this method should have no effect.
+    ///
+    /// If playback is paused or stopped, it remains that way.
+    ///
+    /// If [`properties::types::CanGoPrevious`] is false, attempting to call this method should have no effect.
     pub async fn previous(&self) -> Result<(), zbus::Error> {
         self.call_method("Previous", [()], Interface::Player).await
     }
 
     /// Pauses the playback.
-    /// If [`properties::CanPause`] is false, this should have no effect.
+    ///
+    /// If [`properties::types::CanPause`] is false, this should have no effect.
     pub async fn pause(&self) -> Result<(), zbus::Error> {
         self.call_method("Pause", [()], Interface::Player).await
     }
 
     /// Starts or resumes the playback.
-    /// <br>If playback is already running or if [`properties::CanPlay`] is false, this should have no effect.
+    ///
+    /// If playback is already running or if [`properties::types::CanPlay`] is false, this should have no effect.
     pub async fn play(&self) -> Result<(), zbus::Error> {
         self.call_method("Play", [()], Interface::Player).await
     }
 
     /// Toggles the playback status between play and pause.
-    /// <br>If [`properties::CanPause`] is false, this should have no effect, and may return with an error.
+    /// <br>If [`properties::types::CanPause`] is false, this should have no effect, and may return with an error.
     pub async fn play_pause(&self) -> Result<(), zbus::Error> {
         self.call_method("PlayPause", [()], Interface::Player).await
     }
 
     /// Stops playback. Calling [`Self::play`] after this should restart the playlist.
-    /// <br>If [`properties::CanControl`] is false, calling this should have no effect, and may raise an error.
+    ///
+    /// If [`properties::types::CanControl`] is false, calling this should have no effect, and may raise an error.
     pub async fn stop(&self) -> Result<(), zbus::Error> {
         self.call_method("Stop", [()], Interface::Player).await
     }
 
     /// A duration to seek forward, or of backwards is true backwards.
-    /// <br>May only be used if [`properties::CanSeek`] is true.
+    ///
+    /// May only be used if [`properties::types::CanSeek`] is true.
     pub async fn seek(&self, duration: Duration, backwards: bool) -> Result<(), zbus::Error> {
         let modified_time = duration.as_micros() as f64 * { if backwards { -1.0 } else { 1.0 } };
         self.call_method("Seek", [modified_time], Interface::Player)
@@ -317,7 +328,7 @@ impl Player {
 
     /// Sets the position of the track between 0 and the [length of the track](metadata::Metadata::length). track_id can be retreived from the [metadata](metadata::Metadata::trackid), but it may <b>NOT</b> be "/org/mpris/MediaPlayer2/TrackList/NoTrack".
     /// <br>If position is greater than the [length of the track](metadata::Metadata::length), this shouldn't do anything.
-    /// <br>If [properties::CanSeek] is false this should have no effect.
+    /// <br>If [properties::types::CanSeek] is false this should have no effect.
     pub async fn set_position(
         &self,
         track_id: String,
@@ -331,7 +342,7 @@ impl Player {
         .await
     }
 
-    /// Opens a URI, which's scheme should be an element of [`properties::SupportedURIs`] and the mime-type should match one of the elements of [properties::SupportedMIMEs].
+    /// Opens a URI, which's scheme should be an element of [`properties::types::SupportedURIs`] and the mime-type should match one of the elements of [properties::types::SupportedMIMEs].
     /// If not supported it should raise an error.
     /// <br>If the playback is stopped, it should be started. It also shouldnt be assumed the player opens the URI as soon as called!
     pub async fn open_uri(&self, uri: String) -> Result<(), zbus::Error> {

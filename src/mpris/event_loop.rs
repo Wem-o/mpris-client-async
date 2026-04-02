@@ -14,10 +14,10 @@ use futures::{Stream, StreamExt, TryFutureExt, future::join_all, stream::SelectA
 use zbus::names::OwnedBusName;
 
 use crate::{
-    Mpris, Player, PlayerEvent,
-    mpris::player_stream::PlayerStream,
-    properties::{AnyProperty, AnyStreamYield},
-    streams::{PositionStream, PositionYield},
+    Mpris, Player,
+    mpris::{BusEvent, PlayerStream},
+    player::streams::{PositionStream, PositionYield},
+    properties::erased_types::{AnyProperty, AnyStreamYield},
 };
 
 impl<'a> Mpris<'a> {
@@ -37,25 +37,34 @@ impl<'a> Mpris<'a> {
 }
 
 #[derive(Debug)]
+/// Some event or change on the bus that is one of the followings:
+///
+/// <ul>
+///     <li>Changes in the players connection (removal and new joins)</li>
+///     <li>The tracked [`properties'`](crate::player::properties::Property) changes</li>
+///     <li>[`Signal`](crate::player::signals::Signal) events</li>
+///     <li>[`PositionStream`](crate::player::streams::PositionStream) changes</li>
+/// </ul>
 pub enum MprisEvent {
     Added(Arc<Player>),
     Removed(OwnedBusName),
     PropertyChaned(Arc<AnyStreamYield>),
+    // Signaled()
     PositionChanged(PositionYield),
 }
-impl From<PlayerEvent> for MprisEvent {
-    fn from(value: PlayerEvent) -> Self {
+impl From<BusEvent> for MprisEvent {
+    fn from(value: BusEvent) -> Self {
         match value {
-            PlayerEvent::Connected(player) => Self::Added(player),
-            PlayerEvent::Disconnected(player) => Self::Removed(player.dbus_name()),
+            BusEvent::Connected(player) => Self::Added(player),
+            BusEvent::Disconnected(player) => Self::Removed(player.dbus_name()),
         }
     }
 }
-impl From<&PlayerEvent> for MprisEvent {
-    fn from(value: &PlayerEvent) -> Self {
+impl From<&BusEvent> for MprisEvent {
+    fn from(value: &BusEvent) -> Self {
         match value {
-            PlayerEvent::Connected(player) => Self::Added(player.clone()),
-            PlayerEvent::Disconnected(player) => Self::Removed(player.dbus_name()),
+            BusEvent::Connected(player) => Self::Added(player.clone()),
+            BusEvent::Disconnected(player) => Self::Removed(player.dbus_name()),
         }
     }
 }
@@ -70,6 +79,15 @@ impl From<&Arc<AnyStreamYield>> for MprisEvent {
     }
 }
 
+/// A main event loop that tracks all players internally, and yields an [`MprisEvent`]
+/// that is one of the followings:
+///
+/// <ul>
+///     <li>Changes in the players connection (removal and new joins)</li>
+///     <li>The tracked [`properties'`](crate::player::properties::Property) changes</li>
+///     <li>[`Signal`](crate::player::signals::Signal) events</li>
+///     <li>[`PositionStream`](crate::player::streams::PositionStream) changes</li>
+/// </ul>
 pub struct PlayerLoop {
     // A list of tracked properties
     properties: Vec<Box<dyn AnyProperty + Send + Sync>>,
@@ -264,10 +282,10 @@ impl Stream for PlayerLoop {
             Ready(Some(event)) => {
                 // Update list of players
                 match &event {
-                    PlayerEvent::Connected(player) => {
+                    BusEvent::Connected(player) => {
                         this.players.push(player.clone());
                     }
-                    PlayerEvent::Disconnected(player) => {
+                    BusEvent::Disconnected(player) => {
                         this.players.retain(|other| *player != *other);
                     }
                 };
